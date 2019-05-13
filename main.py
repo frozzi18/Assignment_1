@@ -1,14 +1,72 @@
+
+##################################################
+## This is Assignment I project of EH2745 Computer Applications in Power Systems
+## It has purpose to CIM-XML modelling and parsing, storing data to MySQL Database, and 
+## Build Y-Matrix
+##################################################
+## {2019, MIT License}
+##################################################
+## Author: Fahrur Rozzi, Ruoyu Xu
+## Copyright: Copyright 2019, Assignment 1
+## Credits: ["Lars Nordström", "Oscar Utterbäck", "Fahrur Rozzi", "Ruoyu Xu"]
+## License: MIT License
+## Version: 1.0.1
+## Maintainer: Fahrur Rozzi, Ruoyu Xu 
+## Email: fahrurrozzi18@gmail.com, seuruoyuxu@gmail.com
+## Status: Production
+##################################################
+
+# Import Library
 import xml.etree.ElementTree as ET
 import cmath
+import math
 import numpy
+import mysql.connector
+
+from tkinter import *
+from tkinter import ttk
 import tkinter
+from tkinter import filedialog
 
-tree_EQ = ET.parse('Assignment_EQ_reduced.xml')
-tree_SSH = ET.parse('Assignment_SSH_reduced.xml')
+# GUI of the application
+root = Tk()
+root.title("Assignment 1")
+content = ttk.Frame(root)
+frame = ttk.Frame(content, borderwidth=5, relief="sunken", width=100, height=100)
+img = PhotoImage(file='KTH.png')
+panel = ttk.Label(content, image=img)
+content.grid(column=1, row=0)
+frame.grid(column=1, row=0, columnspan=3, rowspan=2)
+panel.grid(column=1, row=0, columnspan=3, rowspan=2)
 
-# tree_EQ = ET.parse('MicroGridTestConfiguration_T1_BE_EQ_V2.xml')
-# tree_SSH = ET.parse('MicroGridTestConfiguration_T1_BE_SSH_V2.xml')
+# Insert File
+def EQ_file():
+    EQ_file = filedialog.askopenfilename()
+    global EQ_file_XML, Message_EQ
+    EQ_file_XML = EQ_file
+    Message_EQ = "Successfully added EQ File"
 
+def SSH_file():
+    SSH_file = filedialog.askopenfilename()
+    global SSH_file_XML, Message_SSQ
+    SSH_file_XML = SSH_file
+    Message_SSH = "Successfully added SSH File"
+
+# GUI Layout
+Button_EQ = Button(root, text="Import EQ File", command=EQ_file)
+Button_EQ.grid(column=1, row=3, sticky='nesw')
+Button_SSH = Button(root, text="Import SSH File", command=SSH_file)
+Button_SSH.grid(column=1, row=4, sticky='nesw')
+Button_Run = Button(root, text="Run", command=root.destroy)
+Button_Run.grid(column=1, row=5,sticky='nesw')
+
+root.mainloop()
+
+
+
+# For parsing the data EQ and SSH file
+tree_EQ = ET.parse(EQ_file_XML)
+tree_SSH = ET.parse(SSH_file_XML)
 root_EQ = tree_EQ.getroot()
 root_SSH = tree_SSH.getroot()
 
@@ -16,7 +74,7 @@ cim = "{http://iec.ch/TC57/2013/CIM-schema-cim16#}"
 md = "{http://iec.ch/TC57/61970-552/ModelDescription/1#}"
 rdf = "{http://www.w3.org/1999/02/22-rdf-syntax-ns#}"
 
-
+# Class definition of CIM Objects
 class base_voltage:
   def __init__(self, rdf_ID, nominal_value):
     self.rdf_ID = rdf_ID
@@ -61,9 +119,7 @@ class synchronous_machine:
     self.reg_control_rdf_ID = reg_control_rdf_ID
     self.equipment_container_rdf_ID = equipment_container_rdf_ID
     self.base_voltage_rdf_ID = base_voltage_rdf_ID
-
     self.admittance = 0
-
 
 class regulating_control:
   def __init__(self, rdf_ID, name, target_value):
@@ -82,6 +138,8 @@ class power_transformer:
     self.transformer_x = 0
     self.base_voltage_value = 0
     self.admittance_value = 0
+    self.b = 0
+    self.g = 0
 
 
 class energy_consumer_load:
@@ -99,13 +157,15 @@ class energy_consumer_load:
 
 class power_transformer_end_transformer_winding:
   def __init__(self, rdf_ID, name, transformer_r, transformer_x,
-  transformer_rdf_ID, base_voltage_rdf_ID):
+  transformer_rdf_ID, base_voltage_rdf_ID, b, g):
     self.rdf_ID = rdf_ID
     self.name = name
     self.transformer_r = transformer_r
     self.transformer_x = transformer_x
     self.transformer_rdf_ID = transformer_rdf_ID
     self.base_voltage_rdf_ID = base_voltage_rdf_ID
+    self.b = b
+    self.g = g
 
 
 class breaker:
@@ -308,7 +368,9 @@ for power_transformer_end_transformer_winding_xml in root_EQ.iter(cim+'PowerTran
       cim+'IdentifiedObject.name').text, power_transformer_end_transformer_winding_xml.find(cim+'PowerTransformerEnd.r').text,
   power_transformer_end_transformer_winding_xml.find(
       cim+'PowerTransformerEnd.x').text, power_transformer_end_transformer_winding_xml.find(cim+'PowerTransformerEnd.PowerTransformer').get(rdf+'resource'),
-  power_transformer_end_transformer_winding_xml.find(cim+'TransformerEnd.BaseVoltage').get(rdf+'resource')))
+  power_transformer_end_transformer_winding_xml.find(cim+'TransformerEnd.BaseVoltage').get(rdf+'resource'), 
+  power_transformer_end_transformer_winding_xml.find(cim+'PowerTransformerEnd.b').text, 
+  power_transformer_end_transformer_winding_xml.find(cim+'PowerTransformerEnd.g').text))
 
 # Find breaker from XML
 # print('\nBreaker')
@@ -409,7 +471,6 @@ for i in range(len(synchronous_machine_list)):
       buff_base_voltage_ID = buff_base_voltage_ID.replace("#", "")
       for k in range(len(base_voltage_list)):
         if buff_base_voltage_ID == base_voltage_list[k].rdf_ID:
-          # print(base_voltage_list[k].nominal_value)
           synchronous_machine_list[i].base_voltage_rdf_ID = "#" + \
               base_voltage_list[k].rdf_ID
 # print('\n')
@@ -423,7 +484,6 @@ for i in range(len(energy_consumer_load_list)):
       buff_base_voltage_ID = buff_base_voltage_ID.replace("#", "")
       for k in range(len(base_voltage_list)):
         if buff_base_voltage_ID == base_voltage_list[k].rdf_ID:
-          # print(base_voltage_list[k].nominal_value)
           energy_consumer_load_list[i].base_voltage_rdf_ID = "#" + \
               base_voltage_list[k].rdf_ID
 # print('\n')
@@ -437,7 +497,6 @@ for i in range(len(breaker_list)):
       buff_base_voltage_ID = buff_base_voltage_ID.replace("#", "")
       for k in range(len(base_voltage_list)):
         if buff_base_voltage_ID == base_voltage_list[k].rdf_ID:
-          # print(base_voltage_list[k].nominal_value)
           breaker_list[i].base_voltage_rdf_ID = "#"+base_voltage_list[k].rdf_ID
 
 
@@ -470,6 +529,7 @@ for i in range(len(breaker_list)):
   breaker_rdf_ID_list.append(breaker_list[i].rdf_ID)
 
 
+#============================================
 # Alghorithm for network traversal
 # Initialization
 
@@ -509,7 +569,8 @@ def find_next_node(prev_node_rdf_ID, curr_node_rdf_ID, previous_node_type, curre
   next_node_rdf_ID = ""
   current_node_name = ""
   next_node_type = ""
-
+# If the current node is CE
+# Next node is terminal
   if current_node_type == "conducting equipment":
     for i in range(len(conducting_equipment_list)):
         if curr_node_rdf_ID == conducting_equipment_list[i].rdf_ID:
@@ -519,6 +580,8 @@ def find_next_node(prev_node_rdf_ID, curr_node_rdf_ID, previous_node_type, curre
                     next_node_rdf_ID = terminal_list[j].rdf_ID
                     return next_node_rdf_ID, next_node_type 
     
+# If the current node is CN
+# Next node is terminal
   if current_node_type == "connectivity node":
     for k in range(len(connectivity_node_list)):
         if curr_node_rdf_ID == connectivity_node_list[k].rdf_ID:
@@ -528,6 +591,8 @@ def find_next_node(prev_node_rdf_ID, curr_node_rdf_ID, previous_node_type, curre
                     next_node_type = "terminal"
                     return next_node_rdf_ID, next_node_type
 
+# If the current node is terminal and previous is CE
+# Next node is CN and Vice versa
   if current_node_type == "terminal" and previous_node_type == "conducting equipment":  
     for l in range(len(terminal_list)):
         if curr_node_rdf_ID == terminal_list[l].rdf_ID:
@@ -566,13 +631,15 @@ for i in range(len(terminal_attached_busbar_list)):
   
 
 # Step 3
-
+# Find the CN attached to busbar
 connectivity_node_attached_to_busbar_rdf_ID_list = []
 for i in range(len(terminal_attached_busbar_list)):
     connectivity_node_attached_to_busbar_rdf_ID_list.append(terminal_attached_busbar_list[i].CN_rdf_ID.replace("#",""))
 
+# looping through the CN that attached to busbar
 for i in range(len(connectivity_node_attached_to_busbar_rdf_ID_list)):
   CN_related_to_busbar[connectivity_node_attached_to_busbar_rdf_ID_list[i]]=i   
+  # Find the terminal connected to CN that attached to busbar
   for j in range(len(terminal_list)):
     previous_node_ID = terminal_attached_busbar_list[i].rdf_ID
     current_node_ID = connectivity_node_attached_to_busbar_rdf_ID_list[i]
@@ -589,9 +656,9 @@ for i in range(len(connectivity_node_attached_to_busbar_rdf_ID_list)):
             count_terminal_connected_to_connectivy_node_busbar += 1
       
       if count_terminal_connected_to_connectivy_node_busbar == 0:
-        print ("No More Terminal")
+        # print ("No More Terminal")
+        print("")
       if count_terminal_connected_to_connectivy_node_busbar != 0 :
-        # print(previous_node_type, current_node_type, previous_node_ID, current_node_ID)
         next_node_ID, next_node_type  = find_next_node(previous_node_ID, current_node_ID, previous_node_type, current_node_type)
         all_stack.extend(['start busbar '+ str(i), previous_node_type, current_node_type, next_node_type])
         CN_stack.extend(['start busbar '+ str(i), current_node_type])
@@ -600,15 +667,12 @@ for i in range(len(connectivity_node_attached_to_busbar_rdf_ID_list)):
         all_rdf_ID_stack.extend([busbar_section_rdf_id_list[i], previous_node_ID, current_node_ID, next_node_ID])
         CN_rdf_ID_stack.extend([busbar_section_rdf_id_list[i], current_node_ID])
         CE_rdf_ID_stack.append(busbar_section_rdf_id_list[i])
-
-        print('\n')
-        # print(previous_node_type, current_node_type, next_node_type, previous_node_ID, current_node_ID, next_node_ID)
     
         while next_node_ID not in connectivity_node_attached_to_busbar_rdf_ID_list:   
           if current_node_type == "terminal":
               if(next_node_type == "connectivity node"):
                   if next_node_ID in terminal_attached_busbar_rdf_ID_list:
-                      print('Final Terminal Yeah')
+                      print('Final Terminal')
                   else:
                       previous_node_ID = current_node_ID
                       previous_node_type = current_node_type
@@ -622,13 +686,11 @@ for i in range(len(connectivity_node_attached_to_busbar_rdf_ID_list)):
                       next_node_ID, next_node_type  = find_next_node(previous_node_ID, current_node_ID, previous_node_type, current_node_type)
                       all_stack.append(next_node_type)
                       all_rdf_ID_stack.append(next_node_ID)                
-                      # print(previous_node_type, current_node_type, next_node_type, previous_node_ID, current_node_ID, next_node_ID)
 
               if(next_node_type == "conducting equipment"):
                   if next_node_ID in terminal_attached_busbar_rdf_ID_list:
                       print('Final Terminal')
                   else:
-                      # next_node_ID, next_node_type = find_next_node(current_node_ID, next_node_ID)
                       previous_node_ID = current_node_ID
                       previous_node_type = current_node_type
                       current_node_ID = next_node_ID
@@ -642,26 +704,25 @@ for i in range(len(connectivity_node_attached_to_busbar_rdf_ID_list)):
                           if previous_node_ID == terminal_list[iiii].rdf_ID:
                               terminal_list[iiii].traversal_flag = "Pass"
                       if current_node_ID in energy_consumer_load_rdf_ID_list :
-                          print("Meet Energy Consumer")
+                          # print("Energy Consumer Branch")
                           CE_stack.append("Energy Consumer")
                           break
                       elif current_node_ID in synchronous_machine_rdf_ID_list:
-                          print("Meet Synchronous Machine")
+                          # print("Synchronous Machine Branch ")
                           CE_stack.append("Synchronous Machine")                    
                           break
                       elif current_node_ID in linear_shunt_compensator_rdf_ID_list:
-                          print("Meet Linear Compensator")
+                          # print("Linear Compensator Branch")
                           CE_stack.append("Linear Shunt Compensator")
                           break
                       elif current_node_ID in breaker_open_rdf_ID_list:
-                          print("Meet Breaker Open")
+                          print("Breaker Open Branch")
                           CE_stack.append("Open Breaker")
                           break
                       else:
                           next_node_ID, next_node_type  = find_next_node(previous_node_ID, current_node_ID, previous_node_type, current_node_type)
                       all_stack.append(next_node_type)
                       all_rdf_ID_stack_list.append(next_node_ID)
-                      # print(previous_node_type, current_node_type, next_node_type, previous_node_ID, current_node_ID, next_node_ID)
           if current_node_type == "connectivity node":
               for ij in range(len(terminal_list)):
                   if current_node_ID == terminal_list[ij].CN_rdf_ID.replace("#","") and terminal_list[ij].traversal_flag == "Not Yet Pass":
@@ -677,15 +738,6 @@ for i in range(len(connectivity_node_attached_to_busbar_rdf_ID_list)):
                       next_node_ID, next_node_type  = find_next_node(previous_node_ID, current_node_ID, previous_node_type, current_node_type)
                       all_stack.append(next_node_type)
                       all_rdf_ID_stack.append(next_node_ID)
-                      # print(previous_node_type, current_node_type, next_node_type, previous_node_ID, current_node_ID, next_node_ID)
-
-                  # if current_node_ID == terminal_list[ij].CN_rdf_ID.replace("#","") and terminal_list[ij].traversal_flag == "Pass":
-                  #     for iij in range(len(connectivity_node_list)):
-                  #         if previous_node_ID == connectivity_node_list[iij].rdf_ID:
-                  #             connectivity_node_list[iij].count_terminal -= 1
-                  #             if connectivity_node_list[iij].count_terminal == 0 :
-                  #                 # Do something here
-                  #                 print('run out of terminal')
 
 
           if current_node_type == "conducting equipment" :
@@ -710,13 +762,6 @@ for i in range(len(connectivity_node_attached_to_busbar_rdf_ID_list)):
                         for iiijjjkkk in range(len(terminal_list)):
                           if current_node_ID == terminal_list[iiijjjkkk].rdf_ID:
                               terminal_list[iiijjjkkk].traversal_flag = "Pass"
-                      # print(previous_node_type, current_node_type, next_node_type, previous_node_ID, current_node_ID, next_node_ID)
-      print(all_stack)
-      # print(CN_stack)
-      print(CE_stack)
-      print(all_rdf_ID_stack)
-      # print(CN_rdf_ID_stack)
-      print(CE_rdf_ID_stack)
 
       all_stack_list.append(all_stack)
       CN_stack_list.append(CN_stack)
@@ -732,20 +777,12 @@ for i in range(len(connectivity_node_attached_to_busbar_rdf_ID_list)):
       all_rdf_ID_stack = []
       CN_rdf_ID_stack = []
       CE_rdf_ID_stack = []
-      # print(all_stack_list) 
-      
 
 
-# print('\n')
-# print('=============')
-print(all_stack_list)
-# print('yeah')
-
-
-# print('=============')
+# Check the remaining terminal 
 for i in range(len(terminal_list)):
   if terminal_list[i].traversal_flag == "Not Yet Pass":
-    print("You can do it!")
+    print("There is still terminal remaining")
 
 
 # Calculate the Admittance for every conducting equipment
@@ -763,15 +800,17 @@ for i in range(len(power_transformer_list)):
       else:
         power_transformer_list[i].transformer_r += float(power_transformer_end_transformer_winding_list[ii].transformer_r)
         power_transformer_list[i].transformer_x += float(power_transformer_end_transformer_winding_list[ii].transformer_x)
+        power_transformer_list[i].b += float(power_transformer_end_transformer_winding_list[ii].b)
+        power_transformer_list[i].g += float(power_transformer_end_transformer_winding_list[ii].g)
         for iij in range(len(base_voltage_list)):
           if power_transformer_end_transformer_winding_list[ii].base_voltage_rdf_ID.replace("#","") == base_voltage_list[iij].rdf_ID:
             power_transformer_list[i].base_voltage_value = float(base_voltage_list[iij].nominal_value)
 
 for i in range(len(power_transformer_list)):
-  # print(power_transformer_list[i].transformer_r, power_transformer_list[i].transformer_x, power_transformer_list[i].base_voltage_value)
   power_transformer_complex = complex(power_transformer_list[i].transformer_r, power_transformer_list[i].transformer_x)
-  power_transformer_list[i].admittance_value = (1/power_transformer_complex)*pow(power_transformer_list[i].base_voltage_value, 2)/S_base
-  # print(power_transformer_list[i].admittance_value)
+  # power_transformer_complex_2 = complex(power_transformer_list[i].g, power_transformer_list[i].b)
+  power_transformer_complex_2 = 0
+  power_transformer_list[i].admittance_value = ((1/power_transformer_complex)-power_transformer_complex_2)*pow(power_transformer_list[i].base_voltage_value, 2)/S_base
 
 
 # AC Line Segment Admittance
@@ -784,80 +823,301 @@ for i in range(len(AC_line_segment_list)):
   AC_line_segment_list[i].bch_value = float(AC_line_segment_list[i].bch)
   AC_line_segment_list[i].gch_value = float(AC_line_segment_list[i].gch)
   AC_line_segment_list[i].length_value = float(AC_line_segment_list[i].length)
+
   AC_line_complex = complex(AC_line_segment_list[i].ACLineSegment_r_value, AC_line_segment_list[i].ACLineSegment_x_value)
   AC_line_segment_list[i].admittance = (1/AC_line_segment_list[i].length_value) * (1/AC_line_complex)*pow(AC_line_segment_list[i].base_voltage_value, 2)/S_base
+  
+  
   AC_line_shunt_complex = complex(AC_line_segment_list[i].gch_value, AC_line_segment_list[i].bch_value)
   AC_line_segment_list[i].shunt_admittance = (AC_line_segment_list[i].length_value/2)*(AC_line_shunt_complex)*pow(AC_line_segment_list[i].base_voltage_value, 2)/S_base
 
-# Energy Consumer Load Admittance
-for i in range(len(energy_consumer_load_list)):
-  energy_consumer_complex = complex(float(energy_consumer_load_list[i].active_power), -float(energy_consumer_load_list[i].reactive_power))
-  energy_consumer_load_list[i].admittance = energy_consumer_complex/S_base
 
-# Linear Shunt Compensator Admittance
-for i in range(len(linear_shunt_compensator_list)):
-  linear_shunt_compensator_complex = complex(float(linear_shunt_compensator_list[i].g_per_section), float(linear_shunt_compensator_list[i].b_per_section))
-  linear_shunt_compensator_list[i].admittance = linear_shunt_compensator_complex * pow(float(linear_shunt_compensator_list[i].base_voltage_value), 2)/S_base
-
-# Synchrounous Machine Admittance
-for i in range(len(synchronous_machine_list)):
-  synchronous_machine_complex = complex(float(synchronous_machine_list[i].active_power), -float(synchronous_machine_list[i].reactive_power))
-  synchronous_machine_list[i].admittance = -synchronous_machine_complex/1000000
-
-
-
-
+# Update Matrix
 for i in range(len(all_rdf_ID_stack_list)):
+  for iiiiijjj in range(len(all_rdf_ID_stack_list[i])):
+    if all_rdf_ID_stack_list[i][iiiiijjj] in breaker_open_rdf_ID_list:
+      all_rdf_ID_stack_list[i]=[]
   for ii in range(len(power_transformer_list)):
     if power_transformer_list[ii].rdf_ID in all_rdf_ID_stack_list[i]:
       print("From Busbar "+str(CN_related_to_busbar[all_rdf_ID_stack_list[i][2]]))
-      # print(all_rdf_ID_stack_list[i])
       print("To busbar "+str(CN_related_to_busbar[all_rdf_ID_stack_list[i][-2]]))
       buff_Y_matrix_row = CN_related_to_busbar[all_rdf_ID_stack_list[i][2]]
       buff_Y_matrix_column = CN_related_to_busbar[all_rdf_ID_stack_list[i][-2]]
-      print("Matrix row", buff_Y_matrix_row)
-      print("Matrix column", buff_Y_matrix_column)
+      # print("Matrix row", buff_Y_matrix_row)
+      # print("Matrix column", buff_Y_matrix_column)
+
+      # Non Diagonal
       Y_bus_matrix[buff_Y_matrix_row][buff_Y_matrix_column] = -power_transformer_list[ii].admittance_value
       Y_bus_matrix[buff_Y_matrix_column][buff_Y_matrix_row] = -power_transformer_list[ii].admittance_value
+
+      # Diagonal
       Y_bus_matrix[buff_Y_matrix_column][buff_Y_matrix_column] += power_transformer_list[ii].admittance_value
       Y_bus_matrix[buff_Y_matrix_row][buff_Y_matrix_row] += power_transformer_list[ii].admittance_value
-      print('\n')
   
   for ij in range(len(AC_line_segment_list)):
     if AC_line_segment_list[ij].rdf_ID in all_rdf_ID_stack_list[i]:
       print("From Busbar "+str(CN_related_to_busbar[all_rdf_ID_stack_list[i][2]]))
-      # print(all_rdf_ID_stack_list[i])
       print("To busbar "+str(CN_related_to_busbar[all_rdf_ID_stack_list[i][-2]]))
       buff_Y_matrix_row = CN_related_to_busbar[all_rdf_ID_stack_list[i][2]]
       buff_Y_matrix_column = CN_related_to_busbar[all_rdf_ID_stack_list[i][-2]]
-      print("Matrix row", buff_Y_matrix_row)
-      print("Matrix column", buff_Y_matrix_column)
+      # print("Matrix row", buff_Y_matrix_row)
+      # print("Matrix column", buff_Y_matrix_column)
       Y_bus_matrix[buff_Y_matrix_row][buff_Y_matrix_column] += -AC_line_segment_list[ij].admittance
       Y_bus_matrix[buff_Y_matrix_column][buff_Y_matrix_row] += -AC_line_segment_list[ij].admittance
 
       Y_bus_matrix[buff_Y_matrix_column][buff_Y_matrix_column] += (AC_line_segment_list[ij].admittance + AC_line_segment_list[ij].shunt_admittance)
       Y_bus_matrix[buff_Y_matrix_row][buff_Y_matrix_row] += (AC_line_segment_list[ij].admittance + AC_line_segment_list[ij].shunt_admittance)
-      print('yeah')
 
-  # for iiijjj in range(len(energy_consumer_load_list)):
-  #   if energy_consumer_load_list[iiijjj].rdf_ID in all_rdf_ID_stack_list[i]:
-  #     print("Load in Busbar "+str(CN_related_to_busbar[all_rdf_ID_stack_list[i][2]]))
-  #     buff_Y_matrix_row = CN_related_to_busbar[all_rdf_ID_stack_list[i][2]]
-  #     Y_bus_matrix[buff_Y_matrix_row][buff_Y_matrix_row] += energy_consumer_load_list[iiijjj].admittance
-  
-  # for lll in range(len(linear_shunt_compensator_list)):
-  #   if linear_shunt_compensator_list[lll].rdf_ID in all_rdf_ID_stack_list[i]:
-  #     print("Shunt Compensator in Busbar "+str(CN_related_to_busbar[all_rdf_ID_stack_list[i][2]]))
-  #     buff_Y_matrix_row = CN_related_to_busbar[all_rdf_ID_stack_list[i][2]]
-  #     Y_bus_matrix[buff_Y_matrix_row][buff_Y_matrix_row] += linear_shunt_compensator_list[lll].admittance
-
-  # for iiilll in range(len(synchronous_machine_list)):
-  #   if synchronous_machine_list[iiilll].rdf_ID in all_rdf_ID_stack_list[i]:
-  #     print("Syncrounous Machine in Busbar "+str(CN_related_to_busbar[all_rdf_ID_stack_list[i][2]]))
-  #     buff_Y_matrix_row = CN_related_to_busbar[all_rdf_ID_stack_list[i][2]]
-  #     Y_bus_matrix[buff_Y_matrix_row][buff_Y_matrix_row] += synchronous_machine_list[iiilll].admittance
 
 for i in range(len(Y_bus_matrix)):
-  print("\n")
   print(Y_bus_matrix[i])
-# print(CN_related_to_busbar)
+  print('\n')
+
+
+
+
+#============================================
+# Insert Data to Database
+
+# Connect to mysql
+mydb = mysql.connector.connect(
+  host="localhost",
+  user="root",
+  passwd="root"
+)
+
+mycursor = mydb.cursor()
+
+mycursor.execute("SHOW DATABASES")
+
+database_list = []
+
+for databases in mycursor:
+    for database in databases:
+        database_list.append(database)
+
+# Check if cim object database exist
+if "cim_object_database" in database_list:
+    mydb = mysql.connector.connect(
+    host="localhost",
+    user="root",
+    passwd="root",
+    database="CIM_object_database")
+    mycursor = mydb.cursor()
+else:
+    mycursor.execute("CREATE DATABASE cim_object_database")
+    mydb = mysql.connector.connect(
+    host="localhost",
+    user="root",
+    passwd="root",
+    database="CIM_object_database")
+    mycursor = mydb.cursor()
+
+
+
+# Table for Base Voltage Data
+sql = "DROP TABLE IF EXISTS BaseVoltage";
+mycursor.execute(sql)
+sql = "CREATE TABLE IF NOT EXISTS BaseVoltage (ID VARCHAR(37) NOT NULL, Value_kV Double , PRIMARY KEY (ID))"
+mycursor.execute(sql)
+
+# Insert Base Voltage data to database
+sql = "DELETE FROM BaseVoltage"
+mycursor.execute(sql)
+for i in range(len(base_voltage_list)):
+  sql = "INSERT INTO BaseVoltage (ID, Value_kV) VALUES (%s, %s)"
+  val = (base_voltage_list[i].rdf_ID, float(base_voltage_list[i].nominal_value))
+  mycursor.execute(sql, val)
+  mydb.commit()
+						
+# Table for Substation Data 
+sql = "DROP TABLE IF EXISTS Substation"
+mycursor.execute(sql)
+sql = "CREATE TABLE IF NOT EXISTS Substation (ID VARCHAR(37) NOT NULL, Name VARCHAR(37), Region_rdfID VARCHAR(37), PRIMARY KEY(ID))"
+mycursor.execute(sql)   
+
+# Insert Substation data to database
+sql = "DELETE FROM Substation"
+mycursor.execute(sql)
+for i in range(len(substation_list)):
+  sql = "INSERT INTO Substation (ID, Name, Region_rdfID) VALUES (%s, %s, %s)"
+  val = (substation_list[i].rdf_ID, substation_list[i].name, substation_list[i].region_rdf_ID)
+  mycursor.execute(sql, val)
+  mydb.commit()
+						
+# Table for Voltage Level Data
+sql = "DROP TABLE IF EXISTS VoltageLevel"
+mycursor.execute(sql)
+sql = "CREATE TABLE IF NOT EXISTS VoltageLevel (ID VARCHAR(37) NOT NULL, Value_kV Double , Substation_rdfID VARCHAR(37),BaseVoltage_rdfID VARCHAR(37), PRIMARY KEY (ID))"
+mycursor.execute(sql)
+
+# Insert Voltage Level data to database
+sql = "DELETE FROM VoltageLevel"
+mycursor.execute(sql)
+for i in range(len(voltage_level_list)):
+  sql = "INSERT INTO VoltageLevel (ID, Value_kV, Substation_rdfID, BaseVoltage_rdfID) VALUES (%s, %s, %s, %s)"
+  val = (voltage_level_list[i].rdf_ID, voltage_level_list[i].name, voltage_level_list[i].substation_rdf_ID.replace("#",""), voltage_level_list[i].base_voltage_rdf_ID.replace("#",""))
+  mycursor.execute(sql, val)
+  mydb.commit()
+						
+# Table for Generating Unit Data
+sql = "DROP TABLE IF EXISTS GeneratingUnit"
+mycursor.execute(sql)
+sql = "CREATE TABLE IF NOT EXISTS GeneratingUnit (ID VARCHAR(37) NOT NULL, Name VARCHAR(37), MaxP DOUBLE, MinP DOUBLE, EquipmentContainer_rdfID VARCHAR(37), PRIMARY KEY (ID))"
+mycursor.execute(sql)
+
+# Insert Generating Unit data to database
+sql = "DELETE FROM GeneratingUnit"
+mycursor.execute(sql)
+for i in range(len(generating_unit_list)):
+  sql = "INSERT INTO GeneratingUnit (ID, Name, MaxP, MinP, EquipmentContainer_rdfID) VALUES (%s, %s, %s, %s, %s)"
+  val = (generating_unit_list[i].rdf_ID, generating_unit_list[i].name, generating_unit_list[i].max_P, 
+  generating_unit_list[i].min_P , generating_unit_list[i].equipment_container_rdf_ID.replace("#",""))
+  mycursor.execute(sql, val)
+  mydb.commit()
+									
+# Table for Synchronous Machine Data 
+sql = "DROP TABLE IF EXISTS SynchronousMachine"
+mycursor.execute(sql)
+sql = """CREATE TABLE IF NOT EXISTS SynchronousMachine (ID VARCHAR(37) NOT NULL, Name VARCHAR(40), RatedS DOUBLE, P DOUBLE, Q DOUBLE,
+GenUnit_rdfID VARCHAR(37), RegControl_rdfID VARCHAR(37), EquipmentContainer_rdfID VARCHAR(37), baseVoltage_rdfID VARCHAR(37), PRIMARY KEY (ID)) """
+mycursor.execute(sql)
+
+# Insert Synchronous Machine Data to database
+sql = "DELETE FROM SynchronousMachine"
+mycursor.execute(sql)
+for i in range(len(synchronous_machine_list)):
+  sql = "INSERT INTO SynchronousMachine (ID , Name, RatedS , P , Q , GenUnit_rdfID , RegControl_rdfID , EquipmentContainer_rdfID, baseVoltage_rdfID) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)"
+  val = (synchronous_machine_list[i].rdf_ID, synchronous_machine_list[i].name, synchronous_machine_list[i].rated_S, 
+  synchronous_machine_list[i].active_power,
+  synchronous_machine_list[i].reactive_power, synchronous_machine_list[i].generator_unit_rdf_ID.replace("#",""),
+  synchronous_machine_list[i].reg_control_rdf_ID.replace("#",""),
+  synchronous_machine_list[i].equipment_container_rdf_ID.replace("#",""),
+  synchronous_machine_list[i].base_voltage_rdf_ID.replace("#",""))
+  mycursor.execute(sql, val)
+  mydb.commit()
+
+# Table for Regulating Control Data 
+sql = "DROP TABLE IF EXISTS RegulatingControl"
+mycursor.execute(sql)
+sql = "CREATE TABLE IF NOT EXISTS RegulatingControl (ID VARCHAR(37) NOT NULL, Name VARCHAR(37), TargetValue DOUBLE, PRIMARY KEY (ID))"
+mycursor.execute(sql)
+
+# Insert Regulating Control data to database
+sql = "DELETE FROM RegulatingControl"
+mycursor.execute(sql)
+for i in range(len(regulating_control_list)):
+  sql = "INSERT INTO RegulatingControl (ID, Name, TargetValue) VALUES (%s, %s, %s)"
+  val = (regulating_control_list[i].rdf_ID, regulating_control_list[i].name, regulating_control_list[i].target_value)
+  mycursor.execute(sql, val)
+  mydb.commit()
+									
+# Table for Power Transformer
+sql = "DROP TABLE IF EXISTS PowerTransformer"
+mycursor.execute(sql)
+sql = "CREATE TABLE IF NOT EXISTS PowerTransformer (ID VARCHAR(37) NOT NULL, Name VARCHAR(37),EquipmentContainer_rdfID VARCHAR(37), PRIMARY KEY (ID))"
+mycursor.execute(sql)
+
+# Insert Power Transformer Data to database
+sql = "DELETE FROM PowerTransformer"
+mycursor.execute(sql)
+for i in range(len(power_transformer_list)):
+  sql = "INSERT INTO PowerTransformer (ID , Name, EquipmentContainer_rdfID) VALUES (%s, %s, %s)"
+  val = (power_transformer_list[i].rdf_ID, power_transformer_list[i].name,
+  power_transformer_list[i].equipment_container_rdf_ID.replace("#",""))
+  mycursor.execute(sql, val)
+  mydb.commit()
+						
+# Table for Energy Consumer
+sql = "DROP TABLE IF EXISTS EnergyConsumer"
+mycursor.execute(sql)
+sql = "CREATE TABLE IF NOT EXISTS EnergyConsumer(ID VARCHAR(37) NOT NULL, Name VARCHAR(37), P DOUBLE, Q DOUBLE, EquipmentContainer_rdfID VARCHAR(37), BaseVoltage_rdfID VARCHAR(37),  PRIMARY KEY (ID))";		
+mycursor.execute(sql)
+
+# Insert Energy Consumer Data to database
+sql = "DELETE FROM EnergyConsumer"
+mycursor.execute(sql)
+for i in range(len(energy_consumer_load_list)):
+  sql = "INSERT INTO EnergyConsumer (ID, Name, P, Q, EquipmentContainer_rdfID, baseVoltage_rdfID) VALUES (%s, %s, %s, %s, %s, %s)"
+  val = (energy_consumer_load_list[i].rdf_ID, energy_consumer_load_list[i].name, energy_consumer_load_list[i].active_power, 
+  energy_consumer_load_list[i].reactive_power,
+  energy_consumer_load_list[i].equipment_container_rdf_ID.replace("#",""),
+  energy_consumer_load_list[i].base_voltage_rdf_ID.replace("#",""))
+  mycursor.execute(sql, val)
+  mydb.commit()
+						
+# Table for Power Transformer End
+sql = "DROP TABLE IF EXISTS TransformerWinding"
+mycursor.execute(sql)
+sql = """CREATE TABLE IF NOT EXISTS TransformerWinding (ID VARCHAR(40) NOT NULL, Name VARCHAR(40), TransformerR DOUBLE,
+        TransformerX DOUBLE, Transformer_rdfID VARCHAR(37), BaseVoltage_rdfID VARCHAR(37),PRIMARY KEY (ID))"""
+mycursor.execute(sql)
+
+# Insert Power Transformer End to database
+sql = "DELETE FROM TransformerWinding"
+mycursor.execute(sql)
+for i in range(len(power_transformer_end_transformer_winding_list)):
+  sql = "INSERT INTO TransformerWinding (ID , Name, TransformerR , TransformerX , Transformer_rdfID , baseVoltage_rdfID) VALUES (%s, %s, %s, %s, %s, %s)"
+  val = (power_transformer_end_transformer_winding_list[i].rdf_ID, power_transformer_end_transformer_winding_list[i].name, 
+  power_transformer_end_transformer_winding_list[i].transformer_r, 
+  power_transformer_end_transformer_winding_list[i].transformer_x,
+  power_transformer_end_transformer_winding_list[i].transformer_rdf_ID.replace("#",""),
+  power_transformer_end_transformer_winding_list[i].base_voltage_rdf_ID.replace("#",""))
+  mycursor.execute(sql, val)
+  mydb.commit()
+						
+# Table for Circuit Breaker
+sql = "DROP TABLE IF EXISTS CircuitBreaker"
+mycursor.execute(sql)
+sql = "CREATE TABLE IF NOT EXISTS CircuitBreaker (ID VARCHAR(37) NOT NULL, Name VARCHAR(37), State VARCHAR(37), EquipmentContainer_rdfID VARCHAR(37), BaseVoltage_rdfID VARCHAR(37),PRIMARY KEY (ID))"
+mycursor.execute(sql)
+
+# Insert Circuit Breaker data to database
+sql = "DELETE FROM CircuitBreaker"
+mycursor.execute(sql)
+for i in range(len(breaker_list)):
+  sql = "INSERT INTO CircuitBreaker (ID , Name, State , EquipmentContainer_rdfID) VALUES (%s, %s, %s, %s)"
+  val = (breaker_list[i].rdf_ID, breaker_list[i].name, 
+  breaker_list[i].state, 
+  breaker_list[i].equipment_container_rdf_ID.replace("#",""))
+  mycursor.execute(sql, val)
+  mydb.commit()
+
+# Table for Tap Changer
+sql = "DROP TABLE IF EXISTS RatioTapChanger"
+mycursor.execute(sql)
+sql = "CREATE TABLE IF NOT EXISTS RatioTapChanger (ID VARCHAR(37) NOT NULL, Name VARCHAR(37), Step DOUBLE, PRIMARY KEY (ID))"				
+mycursor.execute(sql)
+
+# Insert Tap Changer data to database
+sql = "DELETE FROM RatioTapChanger"
+mycursor.execute(sql)
+for i in range(len(ratio_tap_changer_list)):
+  sql = "INSERT INTO RatioTapChanger (ID , Name, Step) VALUES (%s, %s, %s)"
+  val = (ratio_tap_changer_list[i].rdf_ID, ratio_tap_changer_list[i].name, 
+  ratio_tap_changer_list[i].step)
+  mycursor.execute(sql, val)
+  mydb.commit()
+
+
+# GUI for displaying Y-Bus Matrix
+root = Tk()
+root.title("Y-Bus Matrix")
+height = len(Y_bus_matrix)
+width = len(Y_bus_matrix)
+
+
+
+Label(root, text="Y-BUS MATRIX").grid(row=0, column=math.floor(width/2))
+Label(root, text="").grid(row=1, column=math.floor(width/2))
+
+for i in range(height): #Rows
+    for j in range(width): #Columns
+        b = Label(root, text=str(Y_bus_matrix[i][j]).replace("(","").replace(")",""))
+        b.grid(row=i+2, column=j, pady=5 ,padx=10, sticky="n")
+
+Label(root, text="").grid(row=height+3, column=math.floor(width/2))
+Button(root, text="Quit", command=root.destroy).grid(row=height+4, column=math.floor(width/2))
+
+
+mainloop()
